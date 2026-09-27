@@ -19,7 +19,8 @@ backend.greenleaders.online {
 # applies the same policy, so a local `npm run preview` matches this).
 app.greenleaders.online {
     root * /srv/frontend
-    encode gzip
+    @compressible not path /basemap/*
+    encode @compressible gzip
 
     header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 

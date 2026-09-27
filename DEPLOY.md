@@ -36,6 +36,25 @@ propagated and ports 80/443 are open on the VM's firewall/security group.
 
 ## 3. First-time setup
 
+**If `/opt/greenplan/backend` already has its own `docker-compose.yml` running**
+(the pre-frontend, backend-only setup) **, stop it first:**
+
+```bash
+# on the VM
+cd /opt/greenplan/backend
+docker compose down   # frees ports 80/443 -- its own caddy is bound to them too
+```
+
+Its `caddy` service is a *separate* Compose project from the one in `ci/`
+(different project directory, different project name), so it holds ports
+80/443 in its own right -- the new stack's `caddy` can't bind them until the
+old one is stopped. Skipping this step is exactly what produces
+`Bind for 0.0.0.0:80 failed: port is already allocated` on the first
+`docker compose up` below. This is also why the backend goes briefly
+offline during this one-time migration (the reconnect window mentioned in
+the backend repo's own migration notes) -- there's no way to hand off a
+bound port between two Compose projects without a gap.
+
 ```bash
 # on the VM
 sudo mkdir -p /opt/greenplan && sudo chown "$USER" /opt/greenplan

@@ -64,7 +64,7 @@ services:
       # `docker compose cp moscow.pmtiles caddy:/srv/basemap/moscow.pmtiles`;
       # the app degrades gracefully (basemap just shows as unavailable) if
       # it's empty.
-      - basemap_data:/srv/basemap:ro
+      - /opt/greenplan/basemap:/srv/basemap:ro
       - caddy_data:/data
       - caddy_config:/config
     networks: [internal]
