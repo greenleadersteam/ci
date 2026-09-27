@@ -24,6 +24,20 @@ app.greenleaders.online {
 
     header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        Cross-Origin-Opener-Policy same-origin
+        -Server
+    }
+
+    @immutable path /assets/*
+    header @immutable Cache-Control "public, max-age=31536000, immutable"
+
+    @revalidate not path /assets/* /basemap/*
+    header @revalidate Cache-Control no-cache
+
     # Runtime config: must always be re-fetched, never cached (see
     # frontend/src/shared/config/runtime-config.ts).
     @config path /config.json
