@@ -1,0 +1,85 @@
+# Lives in its own directory, a sibling of both repos:
+#   /opt/greenplan/
+#     ci/
+#       docker-compose.yml   (this file)
+#       Caddyfile
+#       DEPLOY.md
+#     backend/                <- backend repo checkout
+#     frontend/               <- frontend repo checkout
+# Neither repo's own deploy.yml touches this directory's git history (it has
+# none -- these three files are plain, hand-maintained files on the VM, not
+# tracked by either repo). Each workflow resets its own repo checkout over
+# SSH, then runs `docker compose up -d --build <service>` from here -- so
+# builds happen on the VM, not in CI, and no container registry is needed.
+# See DEPLOY.md for the full setup.
+
+services:
+  backend:
+    build: ../backend
+    restart: unless-stopped
+    environment:
+      GREENPLAN_API_DATA_DIR: /data
+      GREENPLAN_API_MAX_CONCURRENT_JOBS: '2'
+      GREENPLAN_API_MAX_UPLOAD_MB: '100'
+      # Comma-separated browser origins allowed to call this API. The
+      # localhost/127.0.0.1 dev-server entries here are harmless in
+      # production -- they only let *your own* frontend dev server (running
+      # on a developer's own machine) call the deployed API, not arbitrary
+      # third-party sites. See config.py's default for the full list this
+      # overrides.
+      GREENPLAN_API_CORS_ORIGINS: >-
+        https://app.greenleaders.online,
+        http://localhost:5173,http://127.0.0.1:5173,
+        http://localhost:3000,http://127.0.0.1:3000,
+        http://localhost:4200,http://127.0.0.1:4200,
+        http://localhost:8080,http://127.0.0.1:8080
+    volumes:
+      - backend_data:/data
+    networks: [internal]
+
+  # Not a long-running service: it builds the SPA (see frontend/Dockerfile)
+  # and publishes dist/ into frontend_data, then exits. Caddy serves those
+  # files directly -- no web server runs inside this container or stays up.
+  # `docker compose up -d --build frontend` reruns it on every deploy;
+  # Caddy needs no restart afterwards since it reads the volume from disk
+  # on every request.
+  frontend:
+    build: ../frontend
+    restart: 'no'
+    volumes:
+      - frontend_data:/out
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - frontend_data:/srv/frontend:ro
+      # PMTiles basemap archive Caddy serves at /basemap/ -- same "local
+      # data, not in git" file as the frontend repo's .data/basemap/ in
+      # development (see frontend/vite.config.ts). Populate it once with
+      # `docker compose cp moscow.pmtiles caddy:/srv/basemap/moscow.pmtiles`;
+      # the app degrades gracefully (basemap just shows as unavailable) if
+      # it's empty.
+      - basemap_data:/srv/basemap:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+    depends_on:
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_completed_successfully
+
+volumes:
+  backend_data:
+  frontend_data:
+  basemap_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:

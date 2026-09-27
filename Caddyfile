@@ -1,0 +1,59 @@
+# backend.greenleaders.online must already resolve (A/AAAA) to this VM's
+# IP, with ports 80/443 reachable from the internet, *before* starting
+# caddy -- it requests its Let's Encrypt certificate for this hostname on
+# first request (HTTP-01 challenge).
+#
+# No client-body size limit is set: Caddy has none by default (unlike
+# nginx's 1MB client_max_body_size), so the API's own 100MB upload limit
+# (GREENPLAN_API_MAX_UPLOAD_MB) is the only one in effect.
+backend.greenleaders.online {
+    reverse_proxy backend:8000
+}
+
+# app.greenleaders.online must resolve to this VM too, before caddy starts,
+# for the same Let's Encrypt HTTP-01 reason as backend.greenleaders.online
+# above. The frontend is a static build (see frontend/Dockerfile), published
+# into the frontend_data volume mounted below -- Caddy serves it directly,
+# no separate web server container needed. Keep the CSP in sync with
+# CONTENT_SECURITY_POLICY in frontend/vite.config.ts (its `preview` command
+# applies the same policy, so a local `npm run preview` matches this).
+app.greenleaders.online {
+    root * /srv/frontend
+    encode gzip
+
+    header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+
+    # Runtime config: must always be re-fetched, never cached (see
+    # frontend/src/shared/config/runtime-config.ts).
+    @config path /config.json
+    header @config Cache-Control "no-store"
+
+    # Content-hashed build assets: safe to cache forever.
+    @assets path /assets/*
+    header @assets Cache-Control "public, max-age=31536000, immutable"
+
+    # Same-origin API proxy: the app never calls the backend cross-origin
+    # (see frontend/src/shared/config/runtime-config.ts's sameOriginPath
+    # check).
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy backend:8000
+    }
+
+    # PMTiles basemap archive, mounted from the basemap_data volume (see
+    # docker-compose.yml). Absent until the archive is placed in the volume --
+    # the app degrades gracefully (see frontend/src/shared/map/map-view.tsx's
+    # "missing" state) if this 404s.
+    handle /basemap/* {
+        uri strip_prefix /basemap
+        root * /srv/basemap
+        header Cache-Control "no-cache"
+        header Content-Type "application/vnd.pmtiles"
+        file_server
+    }
+
+    handle {
+        try_files {path} /index.html
+        file_server
+    }
+}
