@@ -1,3 +1,24 @@
+# greenleaders.online (root domain, separate A/AAAA record from the two
+# subdomains below) serves the static single-page team site (site/ repo, no
+# build step) straight from the bind-mounted checkout -- see
+# docker-compose.yml's `caddy` service volumes. Pure CSS is self-hosted
+# (site/pure-min.css), not loaded from a CDN, so style-src stays 'self' --
+# update this if that changes.
+greenleaders.online {
+    encode gzip
+
+    header {
+        Content-Security-Policy "default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=31536000"
+        -Server
+    }
+
+    root * /srv/site
+    file_server
+}
+
 # backend.greenleaders.online must already resolve (A/AAAA) to this VM's
 # IP, with ports 80/443 reachable from the internet, *before* starting
 # caddy -- it requests its Let's Encrypt certificate for this hostname on

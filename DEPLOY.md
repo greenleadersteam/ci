@@ -1,13 +1,16 @@
 # Deploying greenplan on a cloud VM
 
 Both services (`backend`, `frontend`) run as sibling Docker Compose services
-behind one Caddy instance, on two subdomains of the same VM. This directory
-(`ci/`) holds the three files that glue them together — `docker-compose.yml`,
-`Caddyfile`, this doc — and is itself plain, hand-maintained files on the VM,
-not tracked by either repo's git history (see the comment at the top of
-`docker-compose.yml`). Each repo's own `DEPLOY.md` (`../backend/DEPLOY.md`,
-if still present) covers concerns specific to that service only; this is the
-one place that covers the whole stack.
+behind one Caddy instance, on two subdomains of the same VM; the static
+`site` team page is a third sibling checkout, bind-mounted straight into
+Caddy with no build step or Compose service of its own, serving the root
+domain. This directory (`ci/`) holds the three files that glue them
+together — `docker-compose.yml`, `Caddyfile`, this doc — and is itself plain,
+hand-maintained files on the VM, not tracked by any of the three repos' git
+history (see the comment at the top of `docker-compose.yml`). Each repo's own
+`DEPLOY.md` (`../backend/DEPLOY.md`, if still present) covers concerns
+specific to that service only; this is the one place that covers the whole
+stack.
 
 ## 1. VM prerequisites
 
@@ -25,10 +28,11 @@ sudo usermod -aG docker "$USER"   # log out/in once for this to take effect
 ## 2. DNS
 
 Point A (and AAAA, if the VM has IPv6) records at the VM's public IP for
-both subdomains:
+both subdomains and the root domain:
 
 - `backend.greenleaders.online`
 - `app.greenleaders.online`
+- `greenleaders.online` (the static team site)
 
 Caddy requests a TLS certificate from Let's Encrypt automatically the first
 time it sees a request for each hostname, which only works once DNS has
@@ -61,6 +65,7 @@ sudo mkdir -p /opt/greenplan && sudo chown "$USER" /opt/greenplan
 cd /opt/greenplan
 git clone <backend repo URL> backend
 git clone <frontend repo URL> frontend
+git clone <site repo URL> site
 git clone <ci repo URL, if ci/ is its own repo -- otherwise copy this directory's 3 files by hand> ci
 
 cd ci
@@ -90,6 +95,7 @@ curl https://backend.greenleaders.online/openapi.json    # the OpenAPI schema
 curl https://app.greenleaders.online/                      # the SPA shell
 curl https://app.greenleaders.online/config.json            # runtime config
 curl https://app.greenleaders.online/api/openapi.json        # proxied to backend, same origin
+curl https://greenleaders.online/                            # the static team site
 ```
 
 Open `https://backend.greenleaders.online/docs` for FastAPI's interactive
@@ -129,16 +135,20 @@ you've overridden the project name.)
 ## 7. Continuous deployment (auto-rebuild on push)
 
 Each repo's own `.github/workflows/deploy.yml` does the equivalent of
-`git reset --hard origin/main` in its own checkout, then
-`docker compose up -d --build <service>` from this directory, automatically,
-over SSH, on every push to that repo's `main` (and on-demand via the Actions
-tab's "Run workflow" button). The frontend workflow also runs
-lint/typecheck/test/build first and only deploys if those pass. Builds still
-happen *on the VM* -- same `ci/docker-compose.yml`, no container registry
-involved.
+`git reset --hard origin/main` in its own checkout, automatically, over SSH,
+on every push to that repo's `main` (and on-demand via the Actions tab's
+"Run workflow" button). backend/frontend additionally run
+`docker compose up -d --build <service>` from this directory afterwards --
+builds happen *on the VM* -- same `ci/docker-compose.yml`, no container
+registry involved. The frontend workflow also runs lint/typecheck/test/build
+first and only deploys if those pass. **site has no build/service step at
+all** -- its workflow only resets the checkout; Caddy bind-mounts
+`/opt/greenplan/site` directly (see `docker-compose.yml`'s `caddy` volumes),
+so the reset alone is the entire deploy, visible on the next request with no
+restart.
 
 **One-time VM setup** -- a dedicated SSH keypair for the Actions (don't reuse
-your personal key; both repos' workflows can share one keypair, since
+your personal key; all three repos' workflows can share one keypair, since
 they SSH to the same VM):
 
 ```bash
@@ -149,34 +159,39 @@ ssh-copy-id -i deploy_key.pub <user>@backend.greenleaders.online
 
 **One-time GitHub setup** -- in *each* repo's Settings -> Secrets and
 variables -> Actions (secrets don't carry over between repos, even when
-both deploy to the same VM), add:
+all three deploy to the same VM), add:
 
 - `DEPLOY_SSH_KEY` -- contents of `deploy_key` (the private half; delete the
-  local copy once it's pasted into both repos)
+  local copy once it's pasted into all three repos)
 - `DEPLOY_HOST` -- `backend.greenleaders.online` (or the VM's IP) -- the SSH
-  target, same value in both repos regardless of which subdomain each one
-  deploys
+  target, same value in all three repos regardless of which subdomain each
+  one deploys
 - `DEPLOY_USER` -- the VM username from `ssh-copy-id` above
 
 **Consequences worth knowing:**
 
-- Both workflows do `git reset --hard origin/main` on the VM, not `git pull`
-  -- deterministic (no merge commits, no drift), but it means **don't
-  hand-edit anything in `/opt/greenplan/backend` or `/opt/greenplan/frontend`
-  on the VM** -- any local edit gets silently discarded on the next push.
-  Make changes via commits. `ci/`'s three files are the exception -- they
-  aren't reset by either workflow, so hand edits there persist (but also
-  aren't backed up by git unless you commit them somewhere yourself).
+- All three workflows do `git reset --hard origin/main` on the VM, not
+  `git pull` -- deterministic (no merge commits, no drift), but it means
+  **don't hand-edit anything in `/opt/greenplan/backend`,
+  `/opt/greenplan/frontend`, or `/opt/greenplan/site` on the VM** -- any
+  local edit gets silently discarded on the next push. Make changes via
+  commits. `ci/`'s three files are the exception -- they aren't reset by any
+  workflow, so hand edits there persist (but also aren't backed up by git
+  unless you commit them somewhere yourself).
 - If a pushed commit fails to build (or, for frontend, fails a test), the
   deploy step never runs, the workflow run shows red in the Actions tab, and
   -- importantly -- the *previously running* container for that service is
   untouched and keeps serving. A broken push fails loudly without taking
-  anything down.
-- To roll back, `git revert` the bad commit and push (triggers a normal
-  redeploy), or SSH in directly and `git reset --hard <good-sha> && cd
-  /opt/greenplan/ci && docker compose up -d --build <service>`.
-- Redeploying one service never restarts `caddy` or the other service -- no
-  TLS cert reissue or cross-service downtime from either repo's deploy.
+  anything down. (site has nothing to fail to build -- a bad push there
+  takes effect immediately, so review it before merging to `main`.)
+- To roll back backend/frontend, `git revert` the bad commit and push
+  (triggers a normal redeploy), or SSH in directly and
+  `git reset --hard <good-sha> && cd /opt/greenplan/ci && docker compose up
+  -d --build <service>`. To roll back site, `git revert` and push, or SSH in
+  and `cd /opt/greenplan/site && git reset --hard <good-sha>` -- no compose
+  command needed.
+- Redeploying one service never restarts `caddy` or the other services --
+  no TLS cert reissue or cross-service downtime from any repo's deploy.
 
 ## 8. One important constraint (backend)
 

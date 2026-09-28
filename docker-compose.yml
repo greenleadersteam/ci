@@ -1,4 +1,4 @@
-# Lives in its own directory, a sibling of both repos:
+# Lives in its own directory, a sibling of all three repos:
 #   /opt/greenplan/
 #     ci/
 #       docker-compose.yml   (this file)
@@ -6,12 +6,17 @@
 #       DEPLOY.md
 #     backend/                <- backend repo checkout
 #     frontend/               <- frontend repo checkout
-# Neither repo's own deploy.yml touches this directory's git history (it has
-# none -- these three files are plain, hand-maintained files on the VM, not
-# tracked by either repo). Each workflow resets its own repo checkout over
-# SSH, then runs `docker compose up -d --build <service>` from here -- so
-# builds happen on the VM, not in CI, and no container registry is needed.
-# See DEPLOY.md for the full setup.
+#     site/                   <- site repo checkout (static, no build/service --
+#                                see the `caddy` service's `site` volume mount
+#                                below and Caddyfile's greenleaders.online block)
+# None of the three repos' own deploy.yml touches this directory's git
+# history (it has none from their perspective -- these three files are plain,
+# hand-maintained files on the VM, not tracked by backend/frontend/site).
+# backend/frontend's workflows reset their own repo checkout over SSH, then
+# run `docker compose up -d --build <service>` from here -- so builds happen
+# on the VM, not in CI, and no container registry is needed. site's workflow
+# only resets its checkout -- no service/build of its own, Caddy reads the
+# bind-mounted directory straight off disk. See DEPLOY.md for the full setup.
 
 services:
   backend:
@@ -64,6 +69,10 @@ services:
       # config.json produced. Editing this file (and pushing to this repo)
       # is the whole point: no server-side hand edits needed to change it.
       - ./config:/srv/config:ro
+      # Static single-page team site (site/, no build step) -- served straight
+      # off the host checkout, no volume/build stage needed. See DEPLOY.md and
+      # the greenleaders.online block in Caddyfile.
+      - /opt/greenplan/site:/srv/site:ro
       # PMTiles basemap archive Caddy serves at /basemap/ -- same "local
       # data, not in git" file as the frontend repo's .data/basemap/ in
       # development (see frontend/vite.config.ts). Populate it once with
