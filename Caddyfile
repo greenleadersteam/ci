@@ -22,13 +22,18 @@ app.greenleaders.online {
     @compressible not path /basemap/*
     encode @compressible gzip
 
-    header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    # img-src/connect-src include server.arcgisonline.com for the "Геопривязка"
+    # module's Esri satellite-imagery basemap (see config/config.json's
+    # imagery.tilesUrl/labelsUrl in this repo) -- without it the browser
+    # blocks the imagery tiles even with a correct config.json.
+    header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://server.arcgisonline.com; font-src 'self'; connect-src 'self' https://server.arcgisonline.com; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
     header {
         X-Content-Type-Options nosniff
-        Referrer-Policy no-referrer
-        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
         Cross-Origin-Opener-Policy same-origin
+        Strict-Transport-Security "max-age=31536000"
         -Server
     }
 
@@ -42,6 +47,15 @@ app.greenleaders.online {
     # frontend/src/shared/config/runtime-config.ts).
     @config path /config.json
     header @config Cache-Control "no-store"
+
+    # Served from this repo's config/config.json, not the frontend build's
+    # own public/config.json -- see docker-compose.yml's ./config:/srv/config
+    # mount. Deliberately independent of whatever path the frontend's dist/
+    # output uses, and must come before the catch-all `handle` below.
+    handle /config.json {
+        root * /srv/config
+        file_server
+    }
 
     # Content-hashed build assets: safe to cache forever.
     @assets path /assets/*

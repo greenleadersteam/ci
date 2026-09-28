@@ -58,6 +58,12 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - frontend_data:/srv/frontend:ro
+      # Runtime config.json is ops-owned, not part of the frontend build --
+      # see Caddyfile's dedicated `handle /config.json` block, which serves
+      # from here instead of whatever the frontend repo's own public/
+      # config.json produced. Editing this file (and pushing to this repo)
+      # is the whole point: no server-side hand edits needed to change it.
+      - ./config:/srv/config:ro
       # PMTiles basemap archive Caddy serves at /basemap/ -- same "local
       # data, not in git" file as the frontend repo's .data/basemap/ in
       # development (see frontend/vite.config.ts). Populate it once with
