@@ -47,7 +47,7 @@ app.greenleaders.online {
     # module's Esri satellite-imagery basemap (see config/config.json's
     # imagery.tilesUrl/labelsUrl in this repo) -- without it the browser
     # blocks the imagery tiles even with a correct config.json.
-    header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://server.arcgisonline.com; font-src 'self'; connect-src 'self' https://server.arcgisonline.com; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"; connect-src 'self' https://server.arcgisonline.com https://nominatim.openstreetmap.org;
+    header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://server.arcgisonline.com; font-src 'self'; connect-src 'self' https://server.arcgisonline.com https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
     header {
         X-Content-Type-Options nosniff
