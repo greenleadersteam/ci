@@ -7,7 +7,7 @@
     "attribution": "Powered by Esri; Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community; Labels: Esri, HERE, Garmin, © OpenStreetMap contributors, and the GIS User Community"
   },
   "demoMode": "available",
-  "serverCapabilities": ["obstacles", "norms"],
+  "serverCapabilities": ["obstacles", "norms", "plantingEdits", "editedDxf"],
   "geocoder": {
     "url": "https://nominatim.openstreetmap.org/search",
     "attribution": "Поиск по адресу: Nominatim, данные © участники OpenStreetMap"
