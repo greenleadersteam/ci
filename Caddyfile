@@ -90,8 +90,8 @@ app.greenleaders.online {
         reverse_proxy backend:8000
     }
 
-    # PMTiles basemap archive, mounted from the basemap_data volume (see
-    # docker-compose.yml). Absent until the archive is placed in the volume --
+    # PMTiles basemap archive, bind-mounted from /opt/greenplan/basemap (see
+    # docker-compose.yml). Absent until the archive is copied there --
     # the app degrades gracefully (see frontend/src/shared/map/map-view.tsx's
     # "missing" state) if this 404s.
     handle /basemap/* {

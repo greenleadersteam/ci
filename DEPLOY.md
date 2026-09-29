@@ -67,6 +67,7 @@ git clone <backend repo URL> backend
 git clone <frontend repo URL> frontend
 git clone <site repo URL> site
 git clone <ci repo URL, if ci/ is its own repo -- otherwise copy this directory's 3 files by hand> ci
+mkdir -p overture   # Overture cache, see §6 -- create it yourself so it's owned by you, not root
 
 cd ci
 docker compose up -d --build
@@ -105,11 +106,12 @@ Swagger UI.
 
 The PMTiles basemap archive (`moscow.pmtiles`) is local data, not in git --
 same as `.data/basemap/` in frontend local development (see
-`../frontend/vite.config.ts`). If you have the file, copy it into the
-`basemap_data` volume once:
+`../frontend/vite.config.ts`). Caddy bind-mounts `/opt/greenplan/basemap`
+read-only, so if you have the file, copy it straight onto the host:
 
 ```bash
-docker compose cp moscow.pmtiles caddy:/srv/basemap/moscow.pmtiles
+mkdir -p /opt/greenplan/basemap
+cp moscow.pmtiles /opt/greenplan/basemap/
 ```
 
 Without it, `/basemap/*` 404s and the app just shows the map without a
@@ -131,6 +133,61 @@ docker run --rm -v ci_backend_data:/data -v "$PWD":/backup alpine \
 (The `ci_` volume-name prefix is Compose's project-name default, taken from
 this directory's name -- check the actual name with `docker volume ls` if
 you've overridden the project name.)
+
+**Migrating from the earlier `../data` bind mount** (one-time, only if
+`/opt/greenplan/data` exists): copy it into the volume, fixing ownership for
+the container's uid 1000 on the way in, and move any Overture cache out to
+its own directory:
+
+```bash
+cd /opt/greenplan/ci
+docker compose stop backend
+[ -d ../data/overture_cache ] && mv ../data/overture_cache/* ../overture/
+docker run --rm -v /opt/greenplan/data:/from:ro -v ci_backend_data:/to alpine \
+    sh -c "cp -a /from/. /to/ && chown -R 1000:1000 /to"
+docker compose up -d backend
+```
+
+Check your projects are all there before deleting `/opt/greenplan/data`.
+`cp -a` merges into whatever `ci_backend_data` already holds, so if an older
+copy is already in there, empty the volume first.
+
+### Overture cache
+
+The cache lives on the host at `/opt/greenplan/overture`. The backend mounts
+it read-only at `/overture` (`GREENPLAN_API_OVERTURE_CACHE_DIR`), and each
+processing job reads it, so new files are picked up without a restart. A
+missing or empty cache just means jobs run without Overture fusion. You can fill it by
+copying files in by hand (any host user will do -- the container only needs
+read access), or with the CLI that ships in the backend image. Pass
+`--out-dir` explicitly: the CLI's default, `data/overture_cache`, is relative
+to the container's working directory.
+
+Check what's cached (read-only, fine while the backend is running):
+
+```bash
+cd /opt/greenplan/ci
+docker compose exec backend greenplan overture status --out-dir /overture
+```
+
+Fetch or refresh. The service's mount is read-only, so this runs a
+throwaway container that mounts the same directory read-write at a second
+path:
+
+```bash
+cd /opt/greenplan/ci
+docker compose run --rm --no-deps \
+    --user "$(id -u):$(id -g)" \
+    -v /opt/greenplan/overture:/overture-rw \
+    backend greenplan overture fetch --out-dir /overture-rw --bbox ... --types ...
+```
+
+- `--user` makes the new files owned by you rather than the image's uid
+  1000, so you can still edit or replace them by hand.
+- `--no-deps` leaves the running stack alone, so this is safe at any time.
+- It needs outbound internet access to reach Overture. If it fails trying
+  to write under a home directory (there is none for your uid inside the
+  image), add `-e HOME=/tmp`.
 
 ## 7. Continuous deployment (auto-rebuild on push)
 

@@ -38,8 +38,16 @@ services:
         http://localhost:3000,http://127.0.0.1:3000,
         http://localhost:4200,http://127.0.0.1:4200,
         http://localhost:8080,http://127.0.0.1:8080
+      GREENPLAN_API_OVERTURE_CACHE_DIR: /overture
     volumes:
+      # App-written project state: a named volume, so it inherits the image's
+      # /data ownership (uid 1000, see backend/Dockerfile) -- a bind mount
+      # would need a manual chown on the host first.
       - backend_data:/data
+      # Hand-managed Overture cache: read-only for the API, so it only needs
+      # to be readable -- copy files in as any host user. See DEPLOY.md for
+      # running `greenplan overture fetch`/`status` against it.
+      - /opt/greenplan/overture:/overture:ro
     networks: [internal]
 
   # Not a long-running service: it builds the SPA (see frontend/Dockerfile)
@@ -75,10 +83,9 @@ services:
       - /opt/greenplan/site:/srv/site:ro
       # PMTiles basemap archive Caddy serves at /basemap/ -- same "local
       # data, not in git" file as the frontend repo's .data/basemap/ in
-      # development (see frontend/vite.config.ts). Populate it once with
-      # `docker compose cp moscow.pmtiles caddy:/srv/basemap/moscow.pmtiles`;
-      # the app degrades gracefully (basemap just shows as unavailable) if
-      # it's empty.
+      # development (see frontend/vite.config.ts). Copy moscow.pmtiles into
+      # /opt/greenplan/basemap on the host; the app degrades gracefully
+      # (basemap just shows as unavailable) if it's empty.
       - /opt/greenplan/basemap:/srv/basemap:ro
       - caddy_data:/data
       - caddy_config:/config
@@ -92,7 +99,6 @@ services:
 volumes:
   backend_data:
   frontend_data:
-  basemap_data:
   caddy_data:
   caddy_config:
 
